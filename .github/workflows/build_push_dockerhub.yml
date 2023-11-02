@@ -1,0 +1,50 @@
+name: "Build & Push"
+
+on:
+  push:
+    branches:
+# Triggers disabled, only for demonstration purpose
+#      - 'main'
+#      - 'release/*'
+
+jobs:
+  build-push:
+    runs-on: ubuntu-latest
+    env:
+      DOCKER_HUB_REPO: ${{ secrets.DOCKER_HUB_REPOSITORY }}
+      DOCKER_HUB_USERNAME: ${{ secrets.DOCKER_HUB_USERNAME }}
+      DOCKER_HUB_PASSWORD: ${{ secrets.DOCKER_HUB_PASSWORD }}
+    steps:
+      - name: "Checkout source"
+        uses: actions/checkout@v1
+
+      - name: "Set up JDK 17"
+        uses: actions/setup-java@v1
+        with:
+          java-version: 17
+
+      - name: "Build with Maven"
+        run: mvn clean package
+
+      - name: "Get project version"
+        run: |
+          echo "IMAGE_VERSION=$( mvn help:evaluate -Dexpression=project.version -q -DforceStdout )" >> $GITHUB_ENV
+
+      - name: "Add rc for release branch"
+        if: startsWith(github.ref, 'refs/heads/release')
+        run: |
+          IMAGE_VERSION=${{ env.IMAGE_VERSION }}-rc
+          echo "IMAGE_VERSION=${IMAGE_VERSION}" >> $GITHUB_ENV
+
+      - name: "Connect to Docker Hub"
+        run: docker login -u ${DOCKER_HUB_USERNAME} -p ${DOCKER_HUB_PASSWORD}
+
+      - name: "Build docker image"
+        run: |
+          IMAGE_TAG=${{ env.DOCKER_HUB_REPO }}:${{ env.IMAGE_VERSION }}
+          echo "IMAGE_TAG=${IMAGE_TAG}" >> $GITHUB_ENV
+          docker build -t ${IMAGE_TAG} .
+
+      - name: "Push docker image ${{ env.IMAGE_TAG }}"
+        run: |
+          docker push ${IMAGE_TAG}
